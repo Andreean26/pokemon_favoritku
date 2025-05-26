@@ -14,8 +14,15 @@
   let currentPage = 0;
   let limit = 12;
   let isLoading = false;
+  
+  // Variabel untuk bagian Pokemon Favoritku (hanya search)
+  let favoritesSearchTerm = '';
+  
+  // Variabel untuk bagian daftar Pokemon (search, sort, filter)
   let searchTerm = '';
-  let searchResults: Pokemon | null = null;
+  let sortBy = 'name';
+  let sortDirection = 'asc';
+  let filterType = '';
   
   // For adding/editing
   let selectedPokemon: Pokemon | null = null;
@@ -25,10 +32,6 @@
   let showModal = false;
   
   // Filtering and sorting
-  let sortBy = 'name';
-  let sortDirection = 'asc';
-  let filterType = '';
-  
   $: displayedFavorites = filterAndSortFavorites($pokemonFavorites);
   
   // For pagination of favorites
@@ -43,21 +46,35 @@
   $: totalFavoritePages = Math.ceil(displayedFavorites.length / favoritesPerPage);
   
   function filterAndSortFavorites(favorites: PokemonFavorite[]) {
-    // Filter by type if needed
-    let filtered = filterType 
-      ? favorites.filter(poke => poke.types.includes(filterType))
-      : favorites;
-    
+    let filtered = favorites;
+
     // Filter by search term if provided
-    if (searchTerm.trim()) {
+    if (favoritesSearchTerm.trim()) {
       filtered = filtered.filter(poke => 
-        poke.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        poke.note.toLowerCase().includes(searchTerm.toLowerCase())
+        poke.name.toLowerCase().includes(favoritesSearchTerm.toLowerCase()) ||
+        poke.note.toLowerCase().includes(favoritesSearchTerm.toLowerCase())
+      );
+    }
+
+    // Simple sort by name only for favorites
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  
+  // Tambahkan reactive statement untuk menerapkan sort dan filter pada daftar Pokemon
+  $: sortedAndFilteredPokemons = applySortAndFilter(pokemons);
+  
+  function applySortAndFilter(pokemonList: Pokemon[]) {
+    let filtered = [...pokemonList];
+    
+    // Apply filter by type
+    if (filterType) {
+      filtered = filtered.filter(pokemon => 
+        pokemon.types.some(type => type.type.name === filterType)
       );
     }
     
-    // Sort
-    return filtered.sort((a, b) => {
+    // Apply sort
+    filtered = filtered.sort((a, b) => {
       let valueA, valueB;
       
       if (sortBy === 'name') {
@@ -74,8 +91,11 @@
         return valueA > valueB ? -1 : 1;
       }
     });
+    
+    return filtered;
   }
   
+  // Modifikasi fungsi loadPokemons agar tidak menerapkan sort/filter di sini
   async function loadPokemons() {
     isLoading = true;
     try {
@@ -89,18 +109,41 @@
     }
   }
   
+  // Modifikasi fungsi handleSearch
   async function handleSearch() {
-    if (!searchTerm) return;
+    if (!searchTerm.trim()) {
+      // Jika search kosong, load pokemon biasa
+      loadPokemons();
+      return;
+    }
     
     try {
       const result = await searchPokemon(searchTerm);
-      searchResults = result;
       if (result) {
-        selectPokemon(result);
+        // Set hasil pencarian sebagai array dengan satu Pokemon
+        pokemons = [result];
+        // Reset pagination karena ini hasil pencarian
+        currentPage = 0;
+        totalPokemons = 1;
       }
     } catch (error) {
       console.error('Search failed:', error);
     }
+  }
+  
+  // Tambahkan fungsi untuk reset filter dan kembali ke daftar normal
+  function resetFilters() {
+    searchTerm = '';
+    sortBy = 'name';
+    sortDirection = 'asc';
+    filterType = '';
+    currentPage = 0;
+    loadPokemons();
+  }
+  
+  // Fungsi untuk reset halaman favorit saat search
+  function handleFavoritesSearch() {
+    favoritesCurrentPage = 0;
   }
   
   function selectPokemon(pokemon: Pokemon) {
@@ -181,49 +224,18 @@
   <div class="bg-base-100 rounded-box shadow-xl p-6">
     <h2 class="text-2xl font-bold mb-4">Pokemon Favoritku</h2>
     
-    <!-- Search and filters -->
-    <div class="mb-4 flex flex-col gap-2">
-      <div class="join">
+    <!-- Search only for favorites -->
+    <div class="mb-4">
+      <div class="join w-full">
         <input 
           class="join-item input input-bordered w-full" 
           type="text" 
-          bind:value={searchTerm} 
+          bind:value={favoritesSearchTerm} 
           placeholder="Cari pokemon favorit..."
         />
-      </div>
-      
-      <div class="flex flex-wrap gap-2">
-        <select class="select select-bordered w-full md:w-auto" bind:value={sortBy}>
-          <option value="name">Sort by name</option>
-          <option value="id">Sort by ID</option>
-        </select>
-        
-        <select class="select select-bordered w-full md:w-auto" bind:value={sortDirection}>
-          <option value="asc">Ascending</option>
-          <option value="desc">Descending</option>
-        </select>
-        
-        <select class="select select-bordered w-full md:w-auto" bind:value={filterType}>
-          <option value="">All types</option>
-          <option value="normal">Normal</option>
-          <option value="fire">Fire</option>
-          <option value="water">Water</option>
-          <option value="grass">Grass</option>
-          <option value="electric">Electric</option>
-          <option value="ice">Ice</option>
-          <option value="fighting">Fighting</option>
-          <option value="poison">Poison</option>
-          <option value="ground">Ground</option>
-          <option value="flying">Flying</option>
-          <option value="psychic">Psychic</option>
-          <option value="bug">Bug</option>
-          <option value="rock">Rock</option>
-          <option value="ghost">Ghost</option>
-          <option value="dark">Dark</option>
-          <option value="dragon">Dragon</option>
-          <option value="steel">Steel</option>
-          <option value="fairy">Fairy</option>
-        </select>
+        <button class="join-item btn btn-primary" on:click={handleFavoritesSearch}>
+          Cari
+        </button>
       </div>
     </div>
     
@@ -284,17 +296,56 @@
   <div class="bg-base-100 rounded-box shadow-xl p-6">
     <h2 class="text-2xl font-bold mb-4">Daftar Pokemon</h2>
     
-    <!-- Search from API -->
-    <div class="mb-4 join w-full">
-      <input 
-        class="join-item input input-bordered w-full" 
-        type="text" 
-        bind:value={searchTerm} 
-        placeholder="Cari pokemon..." 
-      />
-      <button class="join-item btn btn-primary" on:click={handleSearch}>
-        Cari
-      </button>
+    <!-- Search, Sort, and Filter for Pokemon list -->
+    <div class="mb-4 flex flex-col gap-2">
+      <div class="join">
+        <input 
+          class="join-item input input-bordered w-full" 
+          type="text" 
+          bind:value={searchTerm} 
+          placeholder="Cari pokemon..."
+        />
+        <button class="join-item btn btn-primary" on:click={handleSearch}>
+          Cari
+        </button>
+        <button class="join-item btn btn-secondary" on:click={resetFilters}>
+          Reset
+        </button>
+      </div>
+      
+      <div class="flex flex-wrap gap-2">
+        <select class="select select-bordered w-full md:w-auto" bind:value={sortBy}>
+          <option value="name">Sort by name</option>
+          <option value="id">Sort by ID</option>
+        </select>
+        
+        <select class="select select-bordered w-full md:w-auto" bind:value={sortDirection}>
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+        
+        <select class="select select-bordered w-full md:w-auto" bind:value={filterType}>
+          <option value="">All types</option>
+          <option value="normal">Normal</option>
+          <option value="fire">Fire</option>
+          <option value="water">Water</option>
+          <option value="grass">Grass</option>
+          <option value="electric">Electric</option>
+          <option value="ice">Ice</option>
+          <option value="fighting">Fighting</option>
+          <option value="poison">Poison</option>
+          <option value="ground">Ground</option>
+          <option value="flying">Flying</option>
+          <option value="psychic">Psychic</option>
+          <option value="bug">Bug</option>
+          <option value="rock">Rock</option>
+          <option value="ghost">Ghost</option>
+          <option value="dark">Dark</option>
+          <option value="dragon">Dragon</option>
+          <option value="steel">Steel</option>
+          <option value="fairy">Fairy</option>
+        </select>
+      </div>
     </div>
     
     <!-- Pokemon list from API -->
@@ -304,7 +355,7 @@
       </div>
     {:else}
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {#each pokemons as pokemon}
+        {#each sortedAndFilteredPokemons as pokemon}
           <div class="card bg-base-200 hover:bg-base-300 cursor-pointer" on:click={() => selectPokemon(pokemon)}>
             <figure class="px-4 pt-4">
               <img 
@@ -325,22 +376,38 @@
         {/each}
       </div>
       
-      <!-- Pagination for PokeAPI -->
-      <div class="flex justify-center mt-4">
-        <div class="join">
-          <button class="join-item btn" disabled={currentPage === 0}
-            on:click={() => changePage(currentPage - 1)}>
-            «
-          </button>
-          <button class="join-item btn">
-            Page {currentPage + 1} of {Math.ceil(totalPokemons / limit)}
-          </button>
-          <button class="join-item btn" disabled={(currentPage + 1) * limit >= totalPokemons}
-            on:click={() => changePage(currentPage + 1)}>
-            »
-          </button>
+      <!-- Show filter info -->
+      {#if filterType || sortBy !== 'name' || sortDirection !== 'asc'}
+        <div class="alert alert-info mt-4">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span>
+            Menampilkan {sortedAndFilteredPokemons.length} Pokemon 
+            {#if filterType} dengan tipe {filterType}{/if}
+            {#if sortBy !== 'name' || sortDirection !== 'asc'} 
+              diurutkan berdasarkan {sortBy} ({sortDirection === 'asc' ? 'A-Z' : 'Z-A'})
+            {/if}
+          </span>
         </div>
-      </div>
+      {/if}
+      
+      <!-- Pagination for PokeAPI (hanya tampil jika tidak ada filter aktif) -->
+      {#if !filterType && sortBy === 'name' && sortDirection === 'asc' && !searchTerm.trim()}
+        <div class="flex justify-center mt-4">
+          <div class="join">
+            <button class="join-item btn" disabled={currentPage === 0}
+              on:click={() => changePage(currentPage - 1)}>
+              «
+            </button>
+            <button class="join-item btn">
+              Page {currentPage + 1} of {Math.ceil(totalPokemons / limit)}
+            </button>
+            <button class="join-item btn" disabled={(currentPage + 1) * limit >= totalPokemons}
+              on:click={() => changePage(currentPage + 1)}>
+              »
+            </button>
+          </div>
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
