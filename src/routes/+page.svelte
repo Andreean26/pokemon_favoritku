@@ -63,6 +63,7 @@
   // Tambahkan reactive statement untuk menerapkan sort dan filter pada daftar Pokemon
   $: sortedAndFilteredPokemons = applySortAndFilter(pokemons);
   
+  // Update fungsi applySortAndFilter untuk menangani string comparison dengan benar
   function applySortAndFilter(pokemonList: Pokemon[]) {
     let filtered = [...pokemonList];
     
@@ -73,26 +74,63 @@
       );
     }
     
-    // Apply sort
+    // Apply sort dengan penanganan yang lebih baik
     filtered = filtered.sort((a, b) => {
-      let valueA, valueB;
+      let valueA: string | number, valueB: string | number;
       
       if (sortBy === 'name') {
-        valueA = a.name;
-        valueB = b.name;
+        valueA = a.name.toLowerCase();
+        valueB = b.name.toLowerCase();
       } else if (sortBy === 'id') {
         valueA = a.id;
         valueB = b.id;
+      } else {
+        return 0;
       }
       
-      if (sortDirection === 'asc') {
-        return valueA < valueB ? -1 : 1;
+      // Gunakan localeCompare untuk string, comparison biasa untuk number
+      if (typeof valueA === 'string' && typeof valueB === 'string') {
+        if (sortDirection === 'asc') {
+          return valueA.localeCompare(valueB);
+        } else {
+          return valueB.localeCompare(valueA);
+        }
       } else {
-        return valueA > valueB ? -1 : 1;
+        if (sortDirection === 'asc') {
+          return valueA < valueB ? -1 : valueA > valueB ? 1 : 0;
+        } else {
+          return valueA > valueB ? -1 : valueA < valueB ? 1 : 0;
+        }
       }
     });
     
     return filtered;
+  }
+  
+  // Tambahkan reactive statements untuk memuat ulang Pokemon ketika filter berubah
+  $: if (filterType || sortBy !== 'name' || sortDirection !== 'asc') {
+    // Jika ada filter aktif dan kita tidak sedang dalam mode pencarian
+    if (!searchTerm.trim()) {
+      // Load semua Pokemon untuk bisa difilter dengan benar
+      loadAllPokemonsForFiltering();
+    }
+  }
+  
+  // Fungsi baru untuk memuat Pokemon ketika filtering
+  async function loadAllPokemonsForFiltering() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    try {
+      // Load lebih banyak Pokemon untuk filtering yang lebih efektif
+      const data = await fetchPokemons(151, 0); // Load first 151 Pokemon
+      pokemons = data.pokemons;
+      totalPokemons = data.count;
+    } catch (error) {
+      console.error('Failed to load pokemons for filtering:', error);
+    } finally {
+      isLoading = false;
+    }
   }
   
   // Modifikasi fungsi loadPokemons agar tidak menerapkan sort/filter di sini
@@ -109,10 +147,11 @@
     }
   }
   
-  // Modifikasi fungsi handleSearch
+  // Update fungsi handleSearch
   async function handleSearch() {
     if (!searchTerm.trim()) {
       // Jika search kosong, load pokemon biasa
+      currentPage = 0;
       loadPokemons();
       return;
     }
@@ -131,7 +170,7 @@
     }
   }
   
-  // Tambahkan fungsi untuk reset filter dan kembali ke daftar normal
+  // Update fungsi resetFilters
   function resetFilters() {
     searchTerm = '';
     sortBy = 'name';
@@ -304,6 +343,14 @@
           type="text" 
           bind:value={searchTerm} 
           placeholder="Cari pokemon..."
+          on:input={() => {
+            // Reset filter saat mencari
+            if (searchTerm.trim()) {
+              filterType = '';
+              sortBy = 'name';
+              sortDirection = 'asc';
+            }
+          }}
         />
         <button class="join-item btn btn-primary" on:click={handleSearch}>
           Cari
@@ -353,6 +400,11 @@
       <div class="flex justify-center my-8">
         <span class="loading loading-spinner loading-lg"></span>
       </div>
+    {:else if sortedAndFilteredPokemons.length === 0}
+      <div class="alert alert-warning">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+        <span>Tidak ada Pokemon yang sesuai dengan filter yang dipilih.</span>
+      </div>
     {:else}
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {#each sortedAndFilteredPokemons as pokemon}
@@ -377,11 +429,12 @@
       </div>
       
       <!-- Show filter info -->
-      {#if filterType || sortBy !== 'name' || sortDirection !== 'asc'}
+      {#if filterType || sortBy !== 'name' || sortDirection !== 'asc' || searchTerm.trim()}
         <div class="alert alert-info mt-4">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           <span>
-            Menampilkan {sortedAndFilteredPokemons.length} Pokemon 
+            Menampilkan {sortedAndFilteredPokemons.length} Pokemon
+            {#if searchTerm.trim()} dengan pencarian "{searchTerm}"{/if}
             {#if filterType} dengan tipe {filterType}{/if}
             {#if sortBy !== 'name' || sortDirection !== 'asc'} 
               diurutkan berdasarkan {sortBy} ({sortDirection === 'asc' ? 'A-Z' : 'Z-A'})
